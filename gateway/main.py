@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, status, Depends
+from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -6,7 +6,7 @@ import httpx
 import jwt
 from datetime import datetime, timedelta
 import logging
-from typing import Any
+from typing import Any, Optional
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("api_gateway")
@@ -27,9 +27,90 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 30
 security = HTTPBearer()
 
 
+# -----------------------------
+# Auth Models
+# -----------------------------
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+
+# -----------------------------
+# Customer Models
+# -----------------------------
+class CustomerCreate(BaseModel):
+    name: str
+    email: str
+    phone: str
+    address: str
+
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+
+
+# -----------------------------
+# Vehicle Models
+# -----------------------------
+class VehicleCreate(BaseModel):
+    customer_id: int
+    vehicle_number: str
+    brand: str
+    model: str
+    year: int
+    fuel_type: str
+
+
+class VehicleUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    vehicle_number: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    year: Optional[int] = None
+    fuel_type: Optional[str] = None
+
+
+# -----------------------------
+# Booking Models
+# -----------------------------
+class BookingCreate(BaseModel):
+    customer_id: int
+    vehicle_id: int
+    service_type: str
+    booking_date: str
+    booking_time: str
+    status: str
+
+
+class BookingUpdate(BaseModel):
+    customer_id: Optional[int] = None
+    vehicle_id: Optional[int] = None
+    service_type: Optional[str] = None
+    booking_date: Optional[str] = None
+    booking_time: Optional[str] = None
+    status: Optional[str] = None
+
+
+# -----------------------------
+# Payment Models
+# -----------------------------
+class PaymentCreate(BaseModel):
+    booking_id: int
+    amount: float
+    payment_method: str
+    payment_status: str
+    payment_date: str
+
+
+class PaymentUpdate(BaseModel):
+    booking_id: Optional[int] = None
+    amount: Optional[float] = None
+    payment_method: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_date: Optional[str] = None
 
 
 def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -56,7 +137,7 @@ async def login(data: LoginRequest):
 
 
 @app.middleware("http")
-async def logging_middleware(request: Request, call_next):
+async def logging_middleware(request, call_next):
     logger.info(f"→ {request.method} {request.url.path}")
     start = datetime.now()
     response = await call_next(request)
@@ -66,7 +147,7 @@ async def logging_middleware(request: Request, call_next):
 
 
 @app.exception_handler(HTTPException)
-async def custom_http_exception(request: Request, exc: HTTPException):
+async def custom_http_exception(request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={
@@ -79,7 +160,7 @@ async def custom_http_exception(request: Request, exc: HTTPException):
 
 
 @app.exception_handler(Exception)
-async def generic_exception(request: Request, exc: Exception):
+async def generic_exception(request, exc: Exception):
     logger.error(f"Unhandled error at {request.url.path}: {exc}")
     return JSONResponse(
         status_code=500,
@@ -136,7 +217,9 @@ def read_root():
     }
 
 
+# -----------------------------
 # Customer routes
+# -----------------------------
 @app.get("/gateway/customers")
 async def get_all_customers(token: str = Depends(verify_token)):
     return await forward_request("customer", "/api/customers", "GET")
@@ -148,15 +231,13 @@ async def get_customer(customer_id: int, token: str = Depends(verify_token)):
 
 
 @app.post("/gateway/customers")
-async def create_customer(request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("customer", "/api/customers", "POST", json=body)
+async def create_customer(data: CustomerCreate, token: str = Depends(verify_token)):
+    return await forward_request("customer", "/api/customers", "POST", json=data.dict())
 
 
 @app.put("/gateway/customers/{customer_id}")
-async def update_customer(customer_id: int, request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("customer", f"/api/customers/{customer_id}", "PUT", json=body)
+async def update_customer(customer_id: int, data: CustomerUpdate, token: str = Depends(verify_token)):
+    return await forward_request("customer", f"/api/customers/{customer_id}", "PUT", json=data.dict(exclude_unset=True))
 
 
 @app.delete("/gateway/customers/{customer_id}")
@@ -164,7 +245,9 @@ async def delete_customer(customer_id: int, token: str = Depends(verify_token)):
     return await forward_request("customer", f"/api/customers/{customer_id}", "DELETE")
 
 
+# -----------------------------
 # Vehicle routes
+# -----------------------------
 @app.get("/gateway/vehicles")
 async def get_all_vehicles(token: str = Depends(verify_token)):
     return await forward_request("vehicle", "/api/vehicles", "GET")
@@ -176,15 +259,13 @@ async def get_vehicle(vehicle_id: int, token: str = Depends(verify_token)):
 
 
 @app.post("/gateway/vehicles")
-async def create_vehicle(request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("vehicle", "/api/vehicles", "POST", json=body)
+async def create_vehicle(data: VehicleCreate, token: str = Depends(verify_token)):
+    return await forward_request("vehicle", "/api/vehicles", "POST", json=data.dict())
 
 
 @app.put("/gateway/vehicles/{vehicle_id}")
-async def update_vehicle(vehicle_id: int, request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "PUT", json=body)
+async def update_vehicle(vehicle_id: int, data: VehicleUpdate, token: str = Depends(verify_token)):
+    return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "PUT", json=data.dict(exclude_unset=True))
 
 
 @app.delete("/gateway/vehicles/{vehicle_id}")
@@ -192,7 +273,9 @@ async def delete_vehicle(vehicle_id: int, token: str = Depends(verify_token)):
     return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "DELETE")
 
 
+# -----------------------------
 # Booking routes
+# -----------------------------
 @app.get("/gateway/bookings")
 async def get_all_bookings(token: str = Depends(verify_token)):
     return await forward_request("booking", "/api/bookings", "GET")
@@ -204,15 +287,13 @@ async def get_booking(booking_id: int, token: str = Depends(verify_token)):
 
 
 @app.post("/gateway/bookings")
-async def create_booking(request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("booking", "/api/bookings", "POST", json=body)
+async def create_booking(data: BookingCreate, token: str = Depends(verify_token)):
+    return await forward_request("booking", "/api/bookings", "POST", json=data.dict())
 
 
 @app.put("/gateway/bookings/{booking_id}")
-async def update_booking(booking_id: int, request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("booking", f"/api/bookings/{booking_id}", "PUT", json=body)
+async def update_booking(booking_id: int, data: BookingUpdate, token: str = Depends(verify_token)):
+    return await forward_request("booking", f"/api/bookings/{booking_id}", "PUT", json=data.dict(exclude_unset=True))
 
 
 @app.delete("/gateway/bookings/{booking_id}")
@@ -220,7 +301,9 @@ async def delete_booking(booking_id: int, token: str = Depends(verify_token)):
     return await forward_request("booking", f"/api/bookings/{booking_id}", "DELETE")
 
 
+# -----------------------------
 # Payment routes
+# -----------------------------
 @app.get("/gateway/payments")
 async def get_all_payments(token: str = Depends(verify_token)):
     return await forward_request("payment", "/api/payments", "GET")
@@ -232,12 +315,10 @@ async def get_payment(payment_id: int, token: str = Depends(verify_token)):
 
 
 @app.post("/gateway/payments")
-async def create_payment(request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("payment", "/api/payments", "POST", json=body)
+async def create_payment(data: PaymentCreate, token: str = Depends(verify_token)):
+    return await forward_request("payment", "/api/payments", "POST", json=data.dict())
 
 
 @app.put("/gateway/payments/{payment_id}")
-async def update_payment(payment_id: int, request: Request, token: str = Depends(verify_token)):
-    body = await request.json()
-    return await forward_request("payment", f"/api/payments/{payment_id}", "PUT", json=body)
+async def update_payment(payment_id: int, data: PaymentUpdate, token: str = Depends(verify_token)):
+    return await forward_request("payment", f"/api/payments/{payment_id}", "PUT", json=data.dict(exclude_unset=True))
