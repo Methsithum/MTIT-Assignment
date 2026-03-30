@@ -1,12 +1,14 @@
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Request, status, Depends
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 import httpx
 import jwt
 from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("api_gateway")
 
 app = FastAPI(title="API Gateway", version="1.0.0")
@@ -22,45 +24,35 @@ SECRET_KEY = "super-secret-key-change-in-production-2026"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
+security = HTTPBearer()
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    token = credentials.credentials
+    try:
+        jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return token
+    except jwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
 
 @app.post("/token")
-async def login(request: Request):
-    try:
-        body = await request.json()
-        username = body.get("username")
-        password = body.get("password")
+async def login(data: LoginRequest):
+    if data.username == "admin" and data.password == "admin123":
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        token = jwt.encode(
+            {"sub": data.username, "exp": expire},
+            SECRET_KEY,
+            algorithm=ALGORITHM
+        )
+        return {"access_token": token, "token_type": "bearer"}
 
-        if username == "admin" and password == "admin123":
-            expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-            token = jwt.encode({"sub": username, "exp": expire}, SECRET_KEY, algorithm=ALGORITHM)
-            return {"access_token": token, "token_type": "bearer"}
-
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON body")
-
-
-@app.middleware("http")
-async def jwt_auth_middleware(request: Request, call_next):
-    if request.url.path.startswith("/gateway/"):
-        auth = request.headers.get("Authorization")
-        if not auth or not auth.startswith("Bearer "):
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Missing or invalid Authorization header (Bearer token required)"}
-            )
-
-        token = auth.split(" ")[1]
-        try:
-            jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        except jwt.PyJWTError:
-            return JSONResponse(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                content={"detail": "Invalid or expired token"}
-            )
-
-    response = await call_next(request)
-    return response
+    raise HTTPException(status_code=401, detail="Incorrect username or password")
 
 
 @app.middleware("http")
@@ -123,6 +115,9 @@ async def forward_request(service: str, path: str, method: str, **kwargs) -> Any
             except ValueError:
                 content = response.text if response.text else None
 
+            if response.status_code == 204:
+                return JSONResponse(status_code=204, content=None)
+
             return JSONResponse(content=content, status_code=response.status_code)
 
         except httpx.RequestError as e:
@@ -143,106 +138,106 @@ def read_root():
 
 # Customer routes
 @app.get("/gateway/customers")
-async def get_all_customers():
+async def get_all_customers(token: str = Depends(verify_token)):
     return await forward_request("customer", "/api/customers", "GET")
 
 
 @app.get("/gateway/customers/{customer_id}")
-async def get_customer(customer_id: int):
+async def get_customer(customer_id: int, token: str = Depends(verify_token)):
     return await forward_request("customer", f"/api/customers/{customer_id}", "GET")
 
 
 @app.post("/gateway/customers")
-async def create_customer(request: Request):
+async def create_customer(request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("customer", "/api/customers", "POST", json=body)
 
 
 @app.put("/gateway/customers/{customer_id}")
-async def update_customer(customer_id: int, request: Request):
+async def update_customer(customer_id: int, request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("customer", f"/api/customers/{customer_id}", "PUT", json=body)
 
 
 @app.delete("/gateway/customers/{customer_id}")
-async def delete_customer(customer_id: int):
+async def delete_customer(customer_id: int, token: str = Depends(verify_token)):
     return await forward_request("customer", f"/api/customers/{customer_id}", "DELETE")
 
 
 # Vehicle routes
 @app.get("/gateway/vehicles")
-async def get_all_vehicles():
+async def get_all_vehicles(token: str = Depends(verify_token)):
     return await forward_request("vehicle", "/api/vehicles", "GET")
 
 
 @app.get("/gateway/vehicles/{vehicle_id}")
-async def get_vehicle(vehicle_id: int):
+async def get_vehicle(vehicle_id: int, token: str = Depends(verify_token)):
     return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "GET")
 
 
 @app.post("/gateway/vehicles")
-async def create_vehicle(request: Request):
+async def create_vehicle(request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("vehicle", "/api/vehicles", "POST", json=body)
 
 
 @app.put("/gateway/vehicles/{vehicle_id}")
-async def update_vehicle(vehicle_id: int, request: Request):
+async def update_vehicle(vehicle_id: int, request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "PUT", json=body)
 
 
 @app.delete("/gateway/vehicles/{vehicle_id}")
-async def delete_vehicle(vehicle_id: int):
+async def delete_vehicle(vehicle_id: int, token: str = Depends(verify_token)):
     return await forward_request("vehicle", f"/api/vehicles/{vehicle_id}", "DELETE")
 
 
 # Booking routes
 @app.get("/gateway/bookings")
-async def get_all_bookings():
+async def get_all_bookings(token: str = Depends(verify_token)):
     return await forward_request("booking", "/api/bookings", "GET")
 
 
 @app.get("/gateway/bookings/{booking_id}")
-async def get_booking(booking_id: int):
+async def get_booking(booking_id: int, token: str = Depends(verify_token)):
     return await forward_request("booking", f"/api/bookings/{booking_id}", "GET")
 
 
 @app.post("/gateway/bookings")
-async def create_booking(request: Request):
+async def create_booking(request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("booking", "/api/bookings", "POST", json=body)
 
 
 @app.put("/gateway/bookings/{booking_id}")
-async def update_booking(booking_id: int, request: Request):
+async def update_booking(booking_id: int, request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("booking", f"/api/bookings/{booking_id}", "PUT", json=body)
 
 
 @app.delete("/gateway/bookings/{booking_id}")
-async def delete_booking(booking_id: int):
+async def delete_booking(booking_id: int, token: str = Depends(verify_token)):
     return await forward_request("booking", f"/api/bookings/{booking_id}", "DELETE")
 
 
 # Payment routes
 @app.get("/gateway/payments")
-async def get_all_payments():
+async def get_all_payments(token: str = Depends(verify_token)):
     return await forward_request("payment", "/api/payments", "GET")
 
 
 @app.get("/gateway/payments/{payment_id}")
-async def get_payment(payment_id: int):
+async def get_payment(payment_id: int, token: str = Depends(verify_token)):
     return await forward_request("payment", f"/api/payments/{payment_id}", "GET")
 
 
 @app.post("/gateway/payments")
-async def create_payment(request: Request):
+async def create_payment(request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("payment", "/api/payments", "POST", json=body)
 
 
 @app.put("/gateway/payments/{payment_id}")
-async def update_payment(payment_id: int, request: Request):
+async def update_payment(payment_id: int, request: Request, token: str = Depends(verify_token)):
     body = await request.json()
     return await forward_request("payment", f"/api/payments/{payment_id}", "PUT", json=body)
