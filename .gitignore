@@ -1,0 +1,12 @@
+# Ignore virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# VS Code
+
+# OS files
+.DS_Store
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
