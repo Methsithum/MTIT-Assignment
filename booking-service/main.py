@@ -1,3 +1,7 @@
+import utils.clients
+import utils.http_session
+import utils.transport
+import utils.session
 from fastapi import FastAPI, HTTPException, status
 from models import Booking, BookingCreate, BookingUpdate
 from service import BookingService
